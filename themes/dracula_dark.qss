@@ -1,0 +1,322 @@
+/* ═══════════════════════════════════════════════════════════════
+   数据处理工具 - Dracula Dark Theme
+   基于 PyDracula 主题 (by Wanderson M.Pimenta) 改编
+   ═══════════════════════════════════════════════════════════════ */
+
+QWidget {
+    color: rgb(221, 221, 221);
+    font: 10pt "Inter", "Segoe UI Variable Display", "Segoe UI";
+}
+
+QToolTip {
+    color: #ffffff;
+    background-color: rgba(33, 37, 43, 180);
+    border: none;
+    border-left: 2px solid rgb(255, 121, 198);
+    text-align: left;
+    padding-left: 8px;
+    margin: 0px;
+}
+
+/* ── 背景 ── */
+#bgApp {
+    background-color: rgb(40, 44, 52);
+    border: 1px solid rgb(44, 49, 58);
+    border-radius: 10px;
+}
+
+/* ── 左侧导航栏 ── */
+#leftMenuBg {
+    background-color: rgb(33, 37, 43);
+}
+
+#topLogoInfo {
+    background-color: rgb(33, 37, 43);
+}
+
+#titleLeftApp {
+    font: 63 13pt "Inter", "Segoe UI Variable Display", "Segoe UI";
+    color: rgb(189, 147, 249);
+}
+#titleLeftDescription {
+    font: 8pt "Inter", "Segoe UI Variable Display", "Segoe UI";
+    color: rgb(113, 126, 149);
+    padding-left: 6px;
+}
+
+/* ── 导航按钮（左侧图标 + 文字） ── */
+#topMenu QPushButton {
+    border: none;
+    border-left: 22px solid transparent;
+    background-color: transparent;
+    text-align: left;
+    padding: 8px 12px 8px 10px;
+    font: 10pt "Inter", "Segoe UI Variable Display", "Segoe UI";
+    icon-size: 22px;
+}
+#topMenu QPushButton:hover {
+    background-color: rgb(40, 44, 52);
+}
+#topMenu QPushButton:pressed {
+    background-color: rgb(189, 147, 249);
+    color: rgb(255, 255, 255);
+}
+
+/* ── 自定义标题栏 ── */
+#contentTopBg {
+    background-color: rgb(33, 37, 43);
+}
+#titleRightInfo {
+    padding-left: 10px;
+    color: rgb(200, 205, 215);
+}
+
+/* ── 窗口控制按钮（最小化 / 最大化 / 关闭） ── */
+#rightButtons QPushButton {
+    background-color: rgba(255, 255, 255, 0);
+    border: none;
+    border-radius: 4px;
+    padding: 0;
+}
+#rightButtons QPushButton:hover {
+    background-color: rgb(52, 57, 66);
+}
+#rightButtons QPushButton:pressed {
+    background-color: rgb(34, 38, 46);
+}
+#closeAppBtn:hover {
+    background-color: rgb(220, 50, 50);
+    color: rgb(255, 255, 255);
+}
+#closeAppBtn:pressed {
+    background-color: rgb(180, 30, 30);
+    color: rgb(255, 255, 255);
+}
+
+/* ── 底栏缩放手柄 ── */
+#frameSizeGrip {
+    background: transparent;
+}
+
+/* ── 内容区底栏 ── */
+#bottomBar {
+    background-color: rgb(44, 49, 58);
+}
+#bottomBar QLabel {
+    font-size: 11px;
+    color: rgb(113, 126, 149);
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-bottom: 2px;
+}
+
+/* ── 页面标题 ── */
+#pageTitle {
+    color: rgb(221, 221, 221);
+    font: 63 16pt "Segoe UI Semibold";
+}
+
+/* ── 运行按钮（用 #pagesContainer #btnRun 提高优先级） ── */
+#pagesContainer #btnRun {
+    background-color: rgb(80, 200, 120);
+    color: rgb(15, 20, 25);
+    border: none;
+    border-radius: 6px;
+    font: 63 11pt "Segoe UI Semibold";
+    padding: 8px 24px;
+}
+#pagesContainer #btnRun:hover {
+    background-color: rgb(95, 220, 140);
+    border: none;
+}
+#pagesContainer #btnRun:pressed {
+    background-color: rgb(60, 170, 100);
+    border: none;
+}
+#pagesContainer #btnRun:disabled {
+    background-color: rgb(55, 60, 72);
+    color: rgb(90, 98, 115);
+    border: none;
+}
+
+/* ── 停止按钮 ── */
+#pagesContainer #btnStop {
+    background-color: rgb(220, 70, 70);
+    color: rgb(255, 255, 255);
+    border: none;
+    border-radius: 6px;
+    font: 63 11pt "Segoe UI Semibold";
+    padding: 8px 24px;
+}
+#pagesContainer #btnStop:hover {
+    background-color: rgb(240, 90, 90);
+    border: none;
+}
+#pagesContainer #btnStop:pressed {
+    background-color: rgb(190, 55, 55);
+    border: none;
+}
+#pagesContainer #btnStop:disabled {
+    background-color: rgb(55, 60, 72);
+    color: rgb(90, 98, 115);
+    border: none;
+}
+
+/* ── 日志输出区 ── */
+#logOutput {
+    background-color: rgb(27, 29, 35);
+    border-radius: 5px;
+    padding: 8px;
+    font: 9pt "Consolas";
+    color: rgb(200, 210, 220);
+    selection-color: rgb(255, 255, 255);
+    selection-background-color: rgb(255, 121, 198);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   通用控件
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── LineEdit / SpinBox / DoubleSpinBox（统一高度 + 内边距） ── */
+QLineEdit, QSpinBox, QDoubleSpinBox {
+    background-color: rgb(33, 37, 43);
+    border-radius: 5px;
+    border: 2px solid rgb(33, 37, 43);
+    padding: 0 10px;
+    color: rgb(200, 205, 215);
+    selection-color: rgb(255, 255, 255);
+    selection-background-color: rgb(255, 121, 198);
+}
+QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover {
+    border: 2px solid rgb(64, 71, 88);
+}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+    border: 2px solid rgb(91, 101, 124);
+}
+
+/* ── CheckBox ── */
+QCheckBox {
+    spacing: 8px;
+}
+QCheckBox::indicator {
+    border: 2px solid rgb(91, 101, 124);
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    background: rgb(44, 49, 60);
+}
+QCheckBox::indicator:hover {
+    border: 2px solid rgb(140, 150, 170);
+}
+QCheckBox::indicator:checked {
+    background: rgb(80, 200, 120);
+    border: 2px solid rgb(80, 200, 120);
+    image: url("resources/icons/check.svg");
+}
+
+/* ── RadioButton（互斥单选，与 CheckBox 同系配色） ── */
+QRadioButton {
+    spacing: 8px;
+    color: rgb(200, 205, 215);
+}
+QRadioButton::indicator {
+    border: 2px solid rgb(91, 101, 124);
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    background: rgb(44, 49, 60);
+}
+QRadioButton::indicator:hover {
+    border: 2px solid rgb(140, 150, 170);
+}
+QRadioButton::indicator:checked {
+    background: rgb(80, 200, 120);
+    border: 2px solid rgb(80, 200, 120);
+    image: url("resources/icons/check.svg");
+}
+
+/* ── QPushButton (通用 / 浏览按钮) ── */
+#pagesContainer QPushButton {
+    border: 2px solid rgb(52, 59, 72);
+    border-radius: 5px;
+    background-color: rgb(52, 59, 72);
+    padding: 4px 12px;
+}
+#pagesContainer QPushButton:hover {
+    background-color: rgb(57, 65, 80);
+    border: 2px solid rgb(61, 70, 86);
+}
+#pagesContainer QPushButton:pressed {
+    background-color: rgb(35, 40, 49);
+    border: 2px solid rgb(43, 50, 61);
+}
+
+/* ── ScrollBars ── */
+QScrollBar:horizontal {
+    border: none;
+    background: rgb(52, 59, 72);
+    height: 8px;
+    margin: 0px 21px 0 21px;
+    border-radius: 0px;
+}
+QScrollBar::handle:horizontal {
+    background: rgb(189, 147, 249);
+    min-width: 25px;
+    border-radius: 4px;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    border: none;
+    background: rgb(55, 63, 77);
+    width: 20px;
+    border-radius: 4px;
+    subcontrol-origin: margin;
+}
+QScrollBar::add-line:horizontal { subcontrol-position: right; }
+QScrollBar::sub-line:horizontal { subcontrol-position: left; }
+QScrollBar::up-arrow:horizontal, QScrollBar::down-arrow:horizontal,
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: none;
+}
+
+QScrollBar:vertical {
+    border: none;
+    background: rgb(52, 59, 72);
+    width: 8px;
+    margin: 21px 0 21px 0;
+    border-radius: 0px;
+}
+QScrollBar::handle:vertical {
+    background: rgb(189, 147, 249);
+    min-height: 25px;
+    border-radius: 4px;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    border: none;
+    background: rgb(55, 63, 77);
+    height: 20px;
+    border-radius: 4px;
+    subcontrol-origin: margin;
+}
+QScrollBar::add-line:vertical { subcontrol-position: bottom; }
+QScrollBar::sub-line:vertical { subcontrol-position: top; }
+QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical,
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+/* ── PlainTextEdit ── */
+QPlainTextEdit {
+    background-color: rgb(27, 29, 35);
+    border-radius: 5px;
+    padding: 10px;
+    selection-color: rgb(255, 255, 255);
+    selection-background-color: rgb(255, 121, 198);
+}
+QPlainTextEdit QScrollBar:vertical { width: 8px; }
+QPlainTextEdit QScrollBar:horizontal { height: 8px; }
+QPlainTextEdit:hover {
+    border: 2px solid rgb(64, 71, 88);
+}
+QPlainTextEdit:focus {
+    border: 2px solid rgb(91, 101, 124);
+}
