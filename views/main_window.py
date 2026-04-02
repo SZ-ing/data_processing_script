@@ -242,7 +242,9 @@ class MainWindow(QMainWindow):
         bottom_bar.setMaximumHeight(26)
         bottom_layout = QHBoxLayout(bottom_bar)
         bottom_layout.setContentsMargins(10, 0, 10, 0)
-        credits_label = QLabel(f"{APP_NAME}  ·  Python + PySide6")
+        credits_label = QLabel(
+            f"{APP_NAME}  ·  Python + PySide6  ·  本软件为个人学习、研究使用软件，不得用于商业及非法用途。"
+        )
         credits_label.setStyleSheet("color: rgb(113, 126, 149); font-size: 11px;")
         bottom_layout.addWidget(credits_label)
         bottom_layout.addStretch()

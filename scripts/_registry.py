@@ -187,6 +187,20 @@ SCRIPT_REGISTRY = [
         ],
     },
     {
+        "id": "split_classes_to_folders",
+        "group": "数据处理",
+        "name": "按类别拆分到文件夹",
+        "description": "根据标签中的类别值创建同名文件夹，并在每个类别目录下生成 images/labels。\n同一图片含多个类别时会复制到多个类别目录；每个类别的 labels 仅保留该类别行。\n可选将拆分后的类别值统一重映射为 0（默认开启，适合单类别训练）。",
+        "module": "scripts.split_classes_to_folders",
+        "function": "split_classes_to_folders",
+        "params": [
+            {"key": "images_dir", "label": "图片文件夹", "type": "folder"},
+            {"key": "labels_dir", "label": "标签文件夹", "type": "folder"},
+            {"key": "output_dir", "label": "输出文件夹", "type": "folder"},
+            {"key": "remap_to_zero", "label": "将拆分后的类别重映射为 0", "type": "bool", "default": True},
+        ],
+    },
+    {
         "id": "merge_m3u8",
         "group": "数据处理",
         "name": "M3U8 合并为 MP4",
