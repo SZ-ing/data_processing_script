@@ -336,7 +336,31 @@ def resolve_output_mp4_path(m3u8_path, output_folder):
 #  单文件 / 批量处理
 # ────────────────────────────────────────
 
-def merge_single_m3u8(m3u8_path, output_mp4_path, ffmpeg_exe=None):
+def _apply_ts_head_tail_trim(segment_paths, skip_first: int, skip_last: int):
+    """
+    从已排序的分片列表中移除最前 skip_first 个与最后 skip_last 个。
+    返回 (裁剪后的列表, 错误信息)；无错误时错误信息为 None。
+    """
+    skip_first = max(0, int(skip_first))
+    skip_last = max(0, int(skip_last))
+    if skip_first == 0 and skip_last == 0:
+        return segment_paths, None
+    n = len(segment_paths)
+    if skip_first + skip_last >= n:
+        return None, (
+            f"移除最前 {skip_first} 与最后 {skip_last} 个分片后无可合并（当前仅 {n} 个有效分片）。"
+        )
+    trimmed = segment_paths[skip_first : n - skip_last]
+    return trimmed, None
+
+
+def merge_single_m3u8(
+    m3u8_path,
+    output_mp4_path,
+    ffmpeg_exe=None,
+    skip_first_ts: int = 0,
+    skip_last_ts: int = 0,
+):
     """处理单个 m3u8：在其所在目录树内索引 ts 并合并。"""
     m3u8_path = os.path.abspath(m3u8_path)
     m3u8_dir = os.path.dirname(m3u8_path)
@@ -370,6 +394,20 @@ def merge_single_m3u8(m3u8_path, output_mp4_path, ffmpeg_exe=None):
         print("错误: 没有任何可用的 ts 分片。")
         return False
 
+    before_trim = len(valid_segments)
+    valid_segments, trim_err = _apply_ts_head_tail_trim(
+        valid_segments, skip_first_ts, skip_last_ts
+    )
+    if trim_err:
+        print(f"错误: {trim_err}")
+        return False
+    if before_trim != len(valid_segments):
+        sf, sl = max(0, int(skip_first_ts)), max(0, int(skip_last_ts))
+        print(
+            f"已跳过最前 {sf} 个、最后 {sl} 个 TS 分片；"
+            f"参与合并 {len(valid_segments)} 个（裁剪前 {before_trim} 个）。"
+        )
+
     print("-" * 30)
     print(f"缺失或不可用分片数: {missing_count}")
     print(f"实际参与合并分片数: {len(valid_segments)}")
@@ -383,8 +421,14 @@ def merge_single_m3u8(m3u8_path, output_mp4_path, ffmpeg_exe=None):
     return success
 
 
-def merge_m3u8_folder(input_path, output_folder="",
-                      recursive_subfolders=False, ffmpeg_path=""):
+def merge_m3u8_folder(
+    input_path,
+    output_folder="",
+    recursive_subfolders=False,
+    ffmpeg_path="",
+    skip_first_ts: int = 0,
+    skip_last_ts: int = 0,
+):
     """
     合并 M3U8 为 MP4。
 
@@ -393,6 +437,8 @@ def merge_m3u8_folder(input_path, output_folder="",
         output_folder: 可选。非空则所有 mp4 输出到此目录；空则每个 mp4 输出到对应 m3u8 同目录。
         recursive_subfolders: 输入为文件夹时，False=只扫描该文件夹一层；True=递归子目录查找所有 m3u8。
         ffmpeg_path: FFmpeg 可执行文件路径。留空自动检测 PATH，找不到则回退 OpenCV。
+        skip_first_ts: 在参与合并的 TS 列表中跳过最前面的 N 个（按 m3u8 顺序或回退排序后的顺序）。
+        skip_last_ts: 跳过最后面的 M 个 TS 分片。
     """
     ffmpeg_exe = _resolve_ffmpeg(ffmpeg_path)
     if ffmpeg_exe:
@@ -417,7 +463,13 @@ def merge_m3u8_folder(input_path, output_folder="",
         print("=" * 50)
         out_path = resolve_output_mp4_path(m3u8_path, output_folder)
         try:
-            if merge_single_m3u8(m3u8_path, out_path, ffmpeg_exe):
+            if merge_single_m3u8(
+                m3u8_path,
+                out_path,
+                ffmpeg_exe,
+                skip_first_ts=skip_first_ts,
+                skip_last_ts=skip_last_ts,
+            ):
                 ok += 1
             else:
                 fail += 1
@@ -437,5 +489,14 @@ if __name__ == "__main__":
     input_path = r"H:\download\大客车\2025-01\videos\Record_38_Events_1"
     output_folder = ""
     recursive_subfolders = False
+    skip_first_ts = 0
+    skip_last_ts = 0
 
-    merge_m3u8_folder(input_path, output_folder, recursive_subfolders)
+    merge_m3u8_folder(
+        input_path,
+        output_folder,
+        recursive_subfolders,
+        ffmpeg_path="",
+        skip_first_ts=skip_first_ts,
+        skip_last_ts=skip_last_ts,
+    )
