@@ -24,10 +24,13 @@ class ScriptPage(QWidget):
         super().__init__(parent)
         self.entry = entry
         self._inputs: dict[str, QWidget] = {}
+        self._param_rows: dict[str, QWidget] = {}
+        self._show_when_rules: list[dict] = []
         self._required_keys: list[str] = []
         self._radio_keys: set[str] = set()
         self._is_running = False
         self._build_ui()
+        self._apply_visibility_rules()
         self._validate_params()
 
     # ── 构建界面 ─────────────────────────────────────
@@ -67,7 +70,7 @@ class ScriptPage(QWidget):
         form_layout.setContentsMargins(0, 8, 0, 0)
         form_layout.setSpacing(self.FORM_SPACING)
         for param in params:
-            form_layout.addLayout(self._create_param_row(param))
+            form_layout.addWidget(self._create_param_row(param))
 
         scroll.setWidget(form_container)
         root.addWidget(scroll, 3)
@@ -96,7 +99,7 @@ class ScriptPage(QWidget):
 
     # ── 参数行：标签 + 控件 ───────────────────────────────
 
-    def _create_param_row(self, param: dict) -> QHBoxLayout:
+    def _create_param_row(self, param: dict) -> QWidget:
         ptype = param.get("type", "text")
         key = param["key"]
         label_text = param.get("label", key)
@@ -108,8 +111,21 @@ class ScriptPage(QWidget):
             and ptype in ("folder", "file_or_folder", "text")
         )
 
-        row = QHBoxLayout()
+        row_widget = QWidget()
+        row_widget.setStyleSheet("background: transparent;")
+        row = QHBoxLayout(row_widget)
+        row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(self.ROW_SPACING)
+        self._param_rows[key] = row_widget
+
+        show_when = param.get("show_when")
+        if isinstance(show_when, dict) and show_when.get("key"):
+            values = show_when.get("values", [])
+            if not isinstance(values, list):
+                values = [values]
+            self._show_when_rules.append(
+                {"target": key, "source": show_when["key"], "values": values}
+            )
 
         display_label = label_text
         if is_required:
@@ -131,7 +147,7 @@ class ScriptPage(QWidget):
             edit.setPlaceholderText("点击右侧按钮选择路径...")
             edit.setText(str(default) if default else "")
             edit.setFixedHeight(self.FIELD_H)
-            edit.textChanged.connect(self._validate_params)
+            edit.textChanged.connect(self._on_param_changed)
             row.addWidget(edit, 1)
             btn = QPushButton("浏览")
             btn.setFixedHeight(self.FIELD_H)
@@ -150,7 +166,7 @@ class ScriptPage(QWidget):
             edit = QLineEdit()
             edit.setText(str(default) if default else "")
             edit.setFixedHeight(self.FIELD_H)
-            edit.textChanged.connect(self._validate_params)
+            edit.textChanged.connect(self._on_param_changed)
             row.addWidget(edit, 1)
             self._inputs[key] = edit
             if is_required:
@@ -207,6 +223,7 @@ class ScriptPage(QWidget):
                 rb = QRadioButton(text)
                 rb.setCursor(Qt.PointingHandCursor)
                 rb.setProperty("param_value", val)
+                rb.toggled.connect(self._on_param_changed)
                 group.addButton(rb)
                 hl.addWidget(rb)
                 if first_rb is None:
@@ -220,13 +237,49 @@ class ScriptPage(QWidget):
             self._inputs[key] = wrap
             self._radio_keys.add(key)
 
-        return row
+        return row_widget
+
+    @Slot()
+    def _on_param_changed(self):
+        # 构建阶段 radio 默认选中会触发此槽，此时 btn_run 可能尚未创建。
+        if not hasattr(self, "btn_run"):
+            return
+        self._apply_visibility_rules()
+        self._validate_params()
+
+    def _apply_visibility_rules(self):
+        """根据 show_when 规则控制参数行显隐。"""
+        if not self._show_when_rules:
+            return
+        for rule in self._show_when_rules:
+            target = rule["target"]
+            source = rule["source"]
+            values = rule["values"]
+            row_widget = self._param_rows.get(target)
+            source_widget = self._inputs.get(source)
+            if row_widget is None or source_widget is None:
+                continue
+
+            current = ""
+            if source in self._radio_keys:
+                current = str(self._radio_group_value(source_widget))
+            elif isinstance(source_widget, QLineEdit):
+                current = source_widget.text().strip()
+            elif isinstance(source_widget, QCheckBox):
+                current = str(source_widget.isChecked())
+            elif isinstance(source_widget, (QSpinBox, QDoubleSpinBox)):
+                current = str(source_widget.value())
+
+            allow = str(current) in {str(v) for v in values}
+            row_widget.setVisible(allow)
 
     # ── 参数校验 ──────────────────────────────────────
 
     @Slot()
     def _validate_params(self):
         """检查所有必填参数是否已填写，控制运行按钮状态（运行中不干预）"""
+        if not hasattr(self, "btn_run"):
+            return
         if self._is_running:
             return
         all_filled = True

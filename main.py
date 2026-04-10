@@ -35,7 +35,7 @@ def main():
     app.setStyle("Fusion")
 
     for candidate in [
-        os.path.join("icons", "数据处理.png"),
+        os.path.join("resources", "icons", "app.svg"),
         os.path.join("resources", "icons", "app.ico"),
     ]:
         if os.path.exists(candidate):

@@ -17,7 +17,6 @@ from scripts._registry import SCRIPT_REGISTRY, get_groups
 from views.script_page import ScriptPage
 from core.script_runner import ScriptWorker
 from core.logger import get_logger
-
 logger = get_logger(__name__)
 
 MENU_WIDTH = 236
@@ -132,7 +131,7 @@ class MainWindow(QMainWindow):
         self.title_label.setObjectName("titleLeftApp")
         self.title_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         logo_layout.addWidget(self.title_label)
-        sub_title = QLabel("数据处理工具")
+        sub_title = QLabel(f"{APP_NAME} v{APP_VERSION}")
         sub_title.setObjectName("titleLeftDescription")
         sub_title.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         logo_layout.addWidget(sub_title)
@@ -243,7 +242,7 @@ class MainWindow(QMainWindow):
         bottom_layout = QHBoxLayout(bottom_bar)
         bottom_layout.setContentsMargins(10, 0, 10, 0)
         credits_label = QLabel(
-            f"{APP_NAME}  ·  Python + PySide6  ·  本软件为个人学习、研究使用软件，不得用于商业及非法用途。"
+            f"{APP_NAME} v{APP_VERSION} 本软件为个人学习、研究使用软件，不得用于商业及非法用途。"
         )
         credits_label.setStyleSheet("color: rgb(113, 126, 149); font-size: 11px;")
         bottom_layout.addWidget(credits_label)

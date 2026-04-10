@@ -3,7 +3,45 @@ import os
 import shutil
 from tqdm import tqdm
 
-def remove_blurry_images(folder_path, threshold=100.0, backup_dir_name="removed_blur"):
+def _collect_image_paths(folder_path, valid_extensions, recursive_subfolders=False):
+    folder_path = os.path.abspath(folder_path)
+    if not recursive_subfolders:
+        return sorted(
+            os.path.join(folder_path, f)
+            for f in os.listdir(folder_path)
+            if os.path.isfile(os.path.join(folder_path, f))
+            and f.lower().endswith(valid_extensions)
+        )
+
+    image_paths = []
+    for root, _, files in os.walk(folder_path):
+        for f in files:
+            if not f.lower().endswith(valid_extensions):
+                continue
+            image_paths.append(os.path.join(root, f))
+    return sorted(image_paths)
+
+
+def _safe_move_with_unique_name(src_path, dst_dir, prefix=""):
+    """移动文件到 dst_dir，重名自动加计数后缀。"""
+    base_name = os.path.basename(src_path)
+    name, ext = os.path.splitext(base_name)
+    candidate = f"{prefix}{base_name}" if prefix else base_name
+    dst_path = os.path.join(dst_dir, candidate)
+    counter = 1
+    while os.path.exists(dst_path):
+        candidate = f"{prefix}{name}_{counter}{ext}" if prefix else f"{name}_{counter}{ext}"
+        dst_path = os.path.join(dst_dir, candidate)
+        counter += 1
+    shutil.move(src_path, dst_path)
+
+
+def remove_blurry_images(
+    folder_path,
+    threshold=100.0,
+    backup_dir_name="removed_blur",
+    recursive_subfolders=False,
+):
     """
     独立脚本：筛出模糊图片并移动到待手动删除文件夹
     :param folder_path: 图片目录
@@ -12,6 +50,7 @@ def remove_blurry_images(folder_path, threshold=100.0, backup_dir_name="removed_
                       - 100: 推荐默认值
                       - 150+: 对清晰度要求极高
     :param backup_dir_name: 在目标目录下创建的待手动删除文件夹名
+    :param recursive_subfolders: 是否递归子文件夹查找图片
     """
     if not os.path.exists(folder_path):
         print(f"路径不存在: {folder_path}")
@@ -23,17 +62,22 @@ def remove_blurry_images(folder_path, threshold=100.0, backup_dir_name="removed_
         os.makedirs(trash_dir)
 
     valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp')
-    files = sorted([f for f in os.listdir(folder_path) if f.lower().endswith(valid_extensions)])
+    files = _collect_image_paths(
+        folder_path, valid_extensions, recursive_subfolders=recursive_subfolders
+    )
     
     print(f"--- 开始模糊检测 ---")
     print(f"目标文件夹: {folder_path}")
+    print(f"递归子文件夹: {'是' if recursive_subfolders else '否'}")
     print(f"模糊阈值: {threshold}")
     print(f"待手动删除文件夹: {trash_dir}")
     
     moved_count = 0
 
-    for file_name in tqdm(files, desc="检测模糊度", unit="img"):
-        file_path = os.path.join(folder_path, file_name)
+    for file_path in tqdm(files, desc="检测模糊度", unit="img"):
+        if os.path.commonpath([os.path.abspath(file_path), os.path.abspath(trash_dir)]) == os.path.abspath(trash_dir):
+            continue
+        file_name = os.path.basename(file_path)
         
         # 读取图片
         img = cv2.imread(file_path)
@@ -47,8 +91,8 @@ def remove_blurry_images(folder_path, threshold=100.0, backup_dir_name="removed_
         # 判断并移动到 target_dir 下的待手动删除文件夹
         if score < threshold:
             # 在文件名前加分数值，方便手动复核
-            new_name = f"score_{int(score)}_{file_name}"
-            shutil.move(file_path, os.path.join(trash_dir, new_name))
+            prefix = f"score_{int(score)}_"
+            _safe_move_with_unique_name(file_path, trash_dir, prefix=prefix)
             moved_count += 1
 
     print(f"\n处理完成！")
@@ -69,4 +113,9 @@ if __name__ == "__main__":
     # 在 target_dir 下创建这个文件夹，存放筛出的模糊图片
     backup_dir_name = "removed_blur"
     
-    remove_blurry_images(target_dir, blur_limit, backup_dir_name)
+    remove_blurry_images(
+        target_dir,
+        blur_limit,
+        backup_dir_name,
+        recursive_subfolders=False,
+    )

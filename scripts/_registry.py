@@ -20,6 +20,14 @@ MODE_RADIO_AUTO_DET_SEG = [
     {"value": "det", "label": "检测（矩形框 bbox）"},
     {"value": "seg", "label": "分割（多边形 polygon）"},
 ]
+MODE_RADIO_LABELME_INPUT_KIND = [
+    {"value": "json_only", "label": "仅 JSON 转换"},
+    {"value": "mixed_pack", "label": "图片+JSON 混合目录打包"},
+]
+MODE_RADIO_LABEL_STATS_TYPE = [
+    {"value": "txt", "label": "YOLO TXT"},
+    {"value": "json", "label": "LabelMe JSON"},
+]
 
 SCRIPT_REGISTRY = [
     # ── 格式转换 ─────────────────────────────────────
@@ -27,14 +35,17 @@ SCRIPT_REGISTRY = [
         "id": "labelme2yolo",
         "group": "格式转换",
         "name": "LabelMe → YOLO",
-        "description": "将 LabelMe JSON 转换为 YOLO TXT 格式。\n自动识别 rectangle→检测 / polygon→分割，也可手动指定。",
+        "description": "统一入口：支持“仅 JSON 转 TXT”与“图片+JSON 混合目录打包到 images/labels”。\n自动识别 rectangle→检测 / polygon→分割，也可手动指定。",
         "module": "scripts.labelme2yolo",
-        "function": "labelme2yolo",
+        "function": "labelme2yolo_unified",
         "params": [
-            {"key": "json_dir",    "label": "JSON 文件夹",  "type": "folder"},
-            {"key": "output_dir",  "label": "输出文件夹",    "type": "folder"},
+            {"key": "input_kind",  "label": "输入类型", "type": "radio",
+             "default": "json_only", "choices": MODE_RADIO_LABELME_INPUT_KIND},
+            {"key": "input_dir",   "label": "输入文件夹", "type": "folder"},
+            {"key": "output_dir",  "label": "输出文件夹", "type": "folder"},
             {"key": "mode",        "label": "模式", "type": "radio",
              "default": "auto", "choices": MODE_RADIO_AUTO_DET_SEG},
+            {"key": "remap_to_zero", "label": "类别统一映射为 0", "type": "bool", "default": False},
         ],
     },
     {
@@ -79,6 +90,7 @@ SCRIPT_REGISTRY = [
         "function": "remove_blurry_images",
         "params": [
             {"key": "folder_path",     "label": "图片文件夹",  "type": "folder"},
+            {"key": "recursive_subfolders", "label": "递归子文件夹查找图片", "type": "bool", "default": False},
             {"key": "threshold",       "label": "模糊阈值（低于此值视为模糊，推荐 60-150）",
              "type": "float", "default": 100.0, "min": 0, "max": 9999},
             {"key": "backup_dir_name", "label": "回收子目录名",  "type": "text", "default": "removed_blur"},
@@ -93,6 +105,7 @@ SCRIPT_REGISTRY = [
         "function": "find_and_remove_duplicates",
         "params": [
             {"key": "folder_path",     "label": "图片文件夹",  "type": "folder"},
+            {"key": "recursive_subfolders", "label": "递归子文件夹查找图片", "type": "bool", "default": False},
             {"key": "threshold",       "label": "汉明距离阈值（推荐 3-8）",
              "type": "int", "default": 5, "min": 0, "max": 64},
             {"key": "backup_dir_name", "label": "回收子目录名",  "type": "text", "default": "removed_duplicates"},
@@ -147,11 +160,13 @@ SCRIPT_REGISTRY = [
         "id": "count_quantity",
         "group": "数据处理",
         "name": "标签统计",
-        "description": "统计 YOLO 标签文件夹中各类别的实例数和包含该类别的图片数。",
+        "description": "统计标签文件夹中各类别的实例数和包含该类别的文件数。\n支持 YOLO TXT 与 LabelMe JSON 两种格式。",
         "module": "scripts.count_quantity",
         "function": "count_yolo_labels",
         "params": [
             {"key": "label_dir", "label": "标签文件夹", "type": "folder"},
+            {"key": "label_type", "label": "标签类型", "type": "radio",
+             "default": "txt", "choices": MODE_RADIO_LABEL_STATS_TYPE},
         ],
     },
     {

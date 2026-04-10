@@ -141,29 +141,12 @@ python main.py
 
 在**项目根目录**执行。下列参数组合经本项目验证；若删减 `--include-data-dir=icons=icons` 或 `--nofollow-import-to=...` 等选项，可能出现 **Nuitka 报错或运行期异常**。
 
-**前置条件**：根目录下存在 `icons` 文件夹，且其中有 `--windows-icon-from-ico` 指向的图标文件（示例为 `icons/数据处理.png`，若你使用 `.ico` 请相应改路径）。
+**前置条件**：根目录下存在 `icons` 文件夹，且其中有 `--windows-icon-from-ico` 指向的图标文件（建议使用 `.ico`，示例为 `icons/app.ico`）。
 
 **一行命令（便于复制）：**
 
 ```bash
-python -m nuitka --standalone --onefile --enable-plugin=pyside6 --include-package=scripts --include-data-dir=themes=themes --include-data-dir=resources=resources --include-data-dir=config=config --include-data-dir=icons=icons --nofollow-import-to=PySide6.QtWebEngine,PySide6.QtWebEngineWidgets,PySide6.QtWebEngineCore,PySide6.Qt3DCore,PySide6.Qt3DRender,PySide6.QtQuick,PySide6.QtQml,PySide6.QtMultimedia,PySide6.QtBluetooth,PySide6.QtSensors,PySide6.QtSerialPort,PySide6.QtCharts,PySide6.QtDataVisualization,PySide6.QtPdf,PySide6.QtSql,PySide6.QtTest,PySide6.QtDesigner,PySide6.QtHelp --windows-console-mode=disable --windows-icon-from-ico=icons/数据处理.png --output-filename=数据处理工具.exe --output-dir=dist main.py
-```
-
-**在 cmd 中分行书写时**（行末 `^` 为续行符）：
-
-```bat
-python -m nuitka --standalone --onefile --enable-plugin=pyside6 ^
-  --include-package=scripts ^
-  --include-data-dir=themes=themes ^
-  --include-data-dir=resources=resources ^
-  --include-data-dir=config=config ^
-  --include-data-dir=icons=icons ^
-  --nofollow-import-to=PySide6.QtWebEngine,PySide6.QtWebEngineWidgets,PySide6.QtWebEngineCore,PySide6.Qt3DCore,PySide6.Qt3DRender,PySide6.QtQuick,PySide6.QtQml,PySide6.QtMultimedia,PySide6.QtBluetooth,PySide6.QtSensors,PySide6.QtSerialPort,PySide6.QtCharts,PySide6.QtDataVisualization,PySide6.QtPdf,PySide6.QtSql,PySide6.QtTest,PySide6.QtDesigner,PySide6.QtHelp ^
-  --windows-console-mode=disable ^
-  --windows-icon-from-ico=icons/数据处理.png ^
-  --output-filename=数据处理工具.exe ^
-  --output-dir=dist ^
-  main.py
+python -m nuitka --standalone --onefile --enable-plugin=pyside6 --include-package=scripts --include-data-dir=themes=themes --include-data-dir=resources=resources --include-data-dir=config=config --include-data-dir=icons=icons --nofollow-import-to=PySide6.QtWebEngine,PySide6.QtWebEngineWidgets,PySide6.QtWebEngineCore,PySide6.Qt3DCore,PySide6.Qt3DRender,PySide6.QtQuick,PySide6.QtQml,PySide6.QtMultimedia,PySide6.QtBluetooth,PySide6.QtSensors,PySide6.QtSerialPort,PySide6.QtCharts,PySide6.QtDataVisualization,PySide6.QtPdf,PySide6.QtSql,PySide6.QtTest,PySide6.QtDesigner,PySide6.QtHelp --windows-console-mode=disable --windows-icon-from-ico=icons/app.ico --output-filename=数据处理工具.exe --output-dir=dist main.py
 ```
 
 产物位于 `dist/数据处理工具.exe`（或 Nuitka 实际输出目录，以命令行提示为准）。

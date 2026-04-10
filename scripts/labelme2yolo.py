@@ -1,7 +1,9 @@
 import json
 import os
-from pathlib import Path
+import shutil
 from tqdm import tqdm
+
+IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"]
 
 
 def _shape_to_yolo_det(shape, img_width, img_height):
@@ -79,7 +81,24 @@ def _collect_labels(json_dir, json_files):
     return all_labels
 
 
-def labelme2yolo(json_dir, output_dir, mode="auto"):
+def _find_image_for_json(input_dir, base_name, image_path_field=""):
+    """优先按 imagePath 字段匹配图片，失败则按同名 stem + 常见后缀查找。"""
+    if image_path_field:
+        by_field = os.path.join(input_dir, os.path.basename(image_path_field))
+        if os.path.isfile(by_field):
+            return by_field
+
+    for ext in IMAGE_EXTS:
+        p = os.path.join(input_dir, base_name + ext)
+        if os.path.isfile(p):
+            return p
+        p_upper = os.path.join(input_dir, base_name + ext.upper())
+        if os.path.isfile(p_upper):
+            return p_upper
+    return None
+
+
+def labelme2yolo(json_dir, output_dir, mode="auto", remap_to_zero=False):
     """
     将 LabelMe JSON 转换为 YOLO TXT 格式。
     自动根据 shape_type 判断输出检测格式还是分割格式。
@@ -89,6 +108,7 @@ def labelme2yolo(json_dir, output_dir, mode="auto"):
         json_dir:   存放 JSON 文件的文件夹路径
         output_dir: 存放生成的 TXT 标签的文件夹路径
         mode:       "auto" 自动判断 | "det" 强制检测 | "seg" 强制分割
+        remap_to_zero: True 时将所有输出类别统一为 0
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -133,8 +153,6 @@ def labelme2yolo(json_dir, output_dir, mode="auto"):
             tqdm.write(f"跳过 {json_file}: 缺少尺寸信息")
             continue
 
-        txt_path = os.path.join(output_dir, f"{base_name}.txt")
-
         yolo_lines = []
         for shape in data.get("shapes", []):
             label_str = shape.get("label", "")
@@ -144,17 +162,159 @@ def labelme2yolo(json_dir, output_dir, mode="auto"):
             coords = converter(shape, img_width, img_height)
             if coords is None:
                 continue
-            yolo_lines.append(f"{label_str} {coords}")
+            class_out = "0" if remap_to_zero else str(label_str)
+            yolo_lines.append(f"{class_out} {coords}")
 
+        if not yolo_lines:
+            continue
+
+        txt_path = os.path.join(output_dir, f"{base_name}.txt")
         with open(txt_path, "w", encoding="utf-8") as f:
-            if yolo_lines:
-                f.write("\n".join(yolo_lines))
+            f.write("\n".join(yolo_lines))
         count += 1
 
     print("-" * 30)
     print(f"转换完成！模式: {mode_label}，共处理 {count} 个文件。")
     print(f"涉及类别: {sorted(all_labels)}")
     print(f"保存路径: {os.path.abspath(output_dir)}")
+
+
+def labelme2yolo_pack_dataset(input_dir, output_dir, mode="auto", remap_to_zero=False):
+    """
+    输入目录为“图片+json 混合目录”：
+    - 在 output_dir 下创建 images/ 与 labels/
+    - 将 json 转成 txt 保存到 labels/
+    - 将有对应 json 的图片复制到 images/
+    """
+    input_dir = os.path.abspath(input_dir)
+    output_dir = os.path.abspath(output_dir)
+    images_out = os.path.join(output_dir, "images")
+    labels_out = os.path.join(output_dir, "labels")
+
+    os.makedirs(images_out, exist_ok=True)
+    os.makedirs(labels_out, exist_ok=True)
+
+    json_files = sorted(
+        f for f in os.listdir(input_dir)
+        if os.path.isfile(os.path.join(input_dir, f)) and f.lower().endswith(".json")
+    )
+    if not json_files:
+        print(f"未找到 JSON 文件: {input_dir}")
+        return
+
+    if mode == "auto":
+        mode = _detect_mode(input_dir, json_files)
+    mode_label = "检测 (bbox)" if mode == "det" else "分割 (polygon)"
+    converter = _shape_to_yolo_det if mode == "det" else _shape_to_yolo_seg
+
+    print(f"输入目录: {input_dir}")
+    print(f"输出目录: {output_dir}")
+    print(f"转换模式: {mode_label}")
+    print(f"类别重映射为 0: {'是' if remap_to_zero else '否'}")
+    print(f"共找到 {len(json_files)} 个 JSON，开始处理...")
+
+    ok_txt = 0
+    ok_img = 0
+    miss_img = 0
+    skip_size = 0
+    skip_empty = 0
+    bad_json = 0
+
+    for json_file in tqdm(json_files, desc="LabelMe -> YOLO 打包", unit="file"):
+        json_path = os.path.join(input_dir, json_file)
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            bad_json += 1
+            tqdm.write(f"无法读取 JSON {json_file}: {e}")
+            continue
+
+        image_path_field = data.get("imagePath", "")
+        if image_path_field:
+            base_name = os.path.splitext(os.path.basename(image_path_field))[0]
+        else:
+            base_name = os.path.splitext(json_file)[0]
+
+        img_width = data.get("imageWidth")
+        img_height = data.get("imageHeight")
+        if not img_width or not img_height:
+            skip_size += 1
+            tqdm.write(f"跳过 {json_file}: 缺少 imageWidth/imageHeight")
+            continue
+
+        yolo_lines = []
+        for shape in data.get("shapes", []):
+            label_str = shape.get("label", "")
+            if not label_str:
+                continue
+            coords = converter(shape, img_width, img_height)
+            if coords is None:
+                continue
+            class_out = "0" if remap_to_zero else str(label_str)
+            yolo_lines.append(f"{class_out} {coords}")
+
+        if not yolo_lines:
+            skip_empty += 1
+            continue
+
+        txt_path = os.path.join(labels_out, f"{base_name}.txt")
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(yolo_lines))
+        ok_txt += 1
+
+        image_src = _find_image_for_json(input_dir, base_name, image_path_field)
+        if image_src:
+            image_dst = os.path.join(images_out, os.path.basename(image_src))
+            shutil.copy2(image_src, image_dst)
+            ok_img += 1
+        else:
+            miss_img += 1
+            tqdm.write(f"未找到对应图片: {json_file}")
+
+    print("-" * 40)
+    print(f"处理完成，模式: {mode_label}")
+    print(f"JSON 转 TXT 成功: {ok_txt}")
+    print(f"图片复制成功: {ok_img}")
+    print(f"缺少对应图片: {miss_img}")
+    print(f"跳过(缺尺寸信息): {skip_size}")
+    print(f"跳过(无有效标注): {skip_empty}")
+    print(f"JSON 读取失败: {bad_json}")
+    print(f"labels 路径: {labels_out}")
+    print(f"images 路径: {images_out}")
+
+
+def labelme2yolo_unified(
+    input_kind="json_only",
+    input_dir="",
+    output_dir="",
+    mode="auto",
+    remap_to_zero=False,
+):
+    """
+    UI 统一入口：
+    - json_only: 仅 JSON 目录 -> 输出 TXT
+    - mixed_pack: 图片+JSON 混合目录 -> 输出 images/labels 打包目录
+    """
+    if not output_dir:
+        raise ValueError("输出文件夹不能为空")
+    if not input_dir:
+        raise ValueError("输入文件夹不能为空")
+
+    if input_kind == "mixed_pack":
+        return labelme2yolo_pack_dataset(
+            input_dir=input_dir,
+            output_dir=output_dir,
+            mode=mode,
+            remap_to_zero=remap_to_zero,
+        )
+
+    return labelme2yolo(
+        json_dir=input_dir,
+        output_dir=output_dir,
+        mode=mode,
+        remap_to_zero=remap_to_zero,
+    )
 
 
 # 保留旧函数名作为兼容别名
