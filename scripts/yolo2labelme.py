@@ -55,7 +55,7 @@ def _parse_seg_line(parts, img_width, img_height):
     return points, "polygon"
 
 
-def yolo2labelme(txt_dir, images_dir, output_dir, include_image_data=True):
+def yolo2labelme(txt_dir, images_dir, output_dir, include_image_data=True, remap_to_zero=False):
     """
     将 YOLO TXT 转换为 LabelMe JSON。
     自动根据每行列数判断检测 (5列) 或分割 (≥7列) 格式。
@@ -65,6 +65,7 @@ def yolo2labelme(txt_dir, images_dir, output_dir, include_image_data=True):
         images_dir:         对应图片文件夹
         output_dir:         输出 JSON 文件夹
         include_image_data: 是否在 JSON 中写入 imageData
+        remap_to_zero:      是否将所有类别统一映射为 0
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -111,7 +112,8 @@ def yolo2labelme(txt_dir, images_dir, output_dir, include_image_data=True):
             num_parts = len(parts)
 
             try:
-                label = parts[0]
+                raw_label = parts[0]
+                label = "0" if remap_to_zero else raw_label
 
                 if num_parts == 5:
                     points, shape_type = _parse_det_line(parts, img_width, img_height)
@@ -161,6 +163,7 @@ def yolo2labelme(txt_dir, images_dir, output_dir, include_image_data=True):
     print("-" * 30)
     print(f"转换完成！共生成 {converted_count} 个 JSON 文件。")
     print(f"检测框: {det_count} 个，分割多边形: {seg_count} 个")
+    print(f"类别统一映射为0: {'是' if remap_to_zero else '否'}")
     print(f"跳过文件数: {skipped_count}")
     print(f"保存路径: {os.path.abspath(output_dir)}")
 

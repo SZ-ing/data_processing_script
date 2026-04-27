@@ -6,7 +6,7 @@ import os
 import sys
 
 APP_NAME = "数据处理工具"
-APP_VERSION = "1.3"
+APP_VERSION = "1.3.0"
 
 
 def get_base_path() -> str:

@@ -6,11 +6,12 @@ import os
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFrame,
-    QPushButton, QLabel, QStackedWidget, QSizePolicy, QSpacerItem,
-    QGraphicsDropShadowEffect, QScrollArea, QSizeGrip,
+    QPushButton, QLabel, QStackedWidget,
+    QGraphicsDropShadowEffect, QScrollArea, QSizeGrip, QSystemTrayIcon,
+    QMenu, QApplication,
 )
-from PySide6.QtCore import Qt, Slot, QPoint, QSize
-from PySide6.QtGui import QColor, QFont, QIcon, QMouseEvent
+from PySide6.QtCore import Qt, Slot, QPoint, QSize, QRect
+from PySide6.QtGui import QColor, QFont, QIcon, QMouseEvent, QAction, QCloseEvent
 
 from config.settings import APP_NAME, APP_VERSION, RESOURCES_DIR
 from scripts._registry import SCRIPT_REGISTRY, get_groups
@@ -31,12 +32,68 @@ MENU_SELECTED_STYLE = (
 )
 
 
+class _EdgeGrip(QWidget):
+    """无边框窗口四边拉伸手柄。"""
+
+    def __init__(self, parent: QMainWindow, edge: str):
+        super().__init__(parent)
+        self._window = parent
+        self._edge = edge
+        self._dragging = False
+        self._start_global = QPoint()
+        self._start_geo = parent.geometry()
+        self.setStyleSheet("background: transparent;")
+        self.setMouseTracking(True)
+        if edge in ("left", "right"):
+            self.setCursor(Qt.SizeHorCursor)
+        else:
+            self.setCursor(Qt.SizeVerCursor)
+
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.LeftButton and not self._window._is_maximized:
+            self._dragging = True
+            self._start_global = event.globalPosition().toPoint()
+            self._start_geo = self._window.geometry()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        if not self._dragging:
+            super().mouseMoveEvent(event)
+            return
+
+        delta = event.globalPosition().toPoint() - self._start_global
+        # 每次移动都从按下时的几何副本计算，避免累计改写导致跳动。
+        geo = QRect(self._start_geo)
+        min_w = self._window.minimumWidth()
+        min_h = self._window.minimumHeight()
+
+        if self._edge == "left":
+            new_left = min(geo.right() - min_w + 1, geo.x() + delta.x())
+            geo.setLeft(new_left)
+        elif self._edge == "right":
+            geo.setWidth(max(min_w, geo.width() + delta.x()))
+        elif self._edge == "top":
+            new_top = min(geo.bottom() - min_h + 1, geo.y() + delta.y())
+            geo.setTop(new_top)
+        elif self._edge == "bottom":
+            geo.setHeight(max(min_h, geo.height() + delta.y()))
+
+        self._window.setGeometry(geo)
+        event.accept()
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        self._dragging = False
+        super().mouseReleaseEvent(event)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
-        self.resize(1100, 720)
-        self.setMinimumSize(860, 540)
+        self.resize(1180, 780)
+        self.setMinimumSize(920, 580)
 
         self._is_maximized = False
         self._drag_pos: QPoint | None = None
@@ -44,15 +101,20 @@ class MainWindow(QMainWindow):
         self._nav_buttons: dict[str, QPushButton] = {}
         self._worker: ScriptWorker | None = None
         self._running_page: ScriptPage | None = None
+        self._running_task_name: str = ""
+        self._force_quit = False
+        self._tray_icon: QSystemTrayIcon | None = None
 
         self._setup_frameless()
         self._build_ui()
         self._setup_resize_grips()
+        self._setup_tray()
         self._apply_theme()
         self._connect_signals()
 
-        first_entry = SCRIPT_REGISTRY[0]
-        self._switch_page(first_entry["id"])
+        first_entry = next((e for e in SCRIPT_REGISTRY if not e.get("hidden")), None)
+        if first_entry:
+            self._switch_page(first_entry["id"])
 
     # ══════════════════════════════════════════════════
     #  无边框配置
@@ -66,6 +128,38 @@ class MainWindow(QMainWindow):
         path = os.path.join(RESOURCES_DIR, "icons", "window", filename)
         return QIcon(path) if os.path.isfile(path) else QIcon()
 
+    def _app_icon(self) -> QIcon:
+        for candidate in (
+            os.path.join(RESOURCES_DIR, "icons", "app.ico"),
+            os.path.join(RESOURCES_DIR, "icons", "app.svg"),
+        ):
+            if os.path.isfile(candidate):
+                return QIcon(candidate)
+        return self.windowIcon()
+
+    def _setup_tray(self):
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+
+        tray = QSystemTrayIcon(self)
+        tray.setIcon(self._app_icon())
+        tray.setToolTip(APP_NAME)
+
+        menu = QMenu(self)
+        action_show = QAction("显示主窗口", self)
+        action_quit = QAction("退出", self)
+        action_show.triggered.connect(lambda *_: self._restore_from_tray())
+        action_quit.triggered.connect(lambda *_: self._quit_from_tray())
+        menu.addAction(action_show)
+        menu.addSeparator()
+        menu.addAction(action_quit)
+
+        tray.setContextMenu(menu)
+        tray.activated.connect(self._on_tray_activated)
+        tray.show()
+        self._tray_icon = tray
+        self._update_tray_tooltip()
+
     def _setup_resize_grips(self):
         """四角/四边缩放手柄"""
         self._grips = []
@@ -74,6 +168,12 @@ class MainWindow(QMainWindow):
             grip.setFixedSize(GRIP_SIZE, GRIP_SIZE)
             grip.setStyleSheet("background: transparent;")
             self._grips.append(grip)
+        self._edge_grips = {
+            "left": _EdgeGrip(self, "left"),
+            "right": _EdgeGrip(self, "right"),
+            "top": _EdgeGrip(self, "top"),
+            "bottom": _EdgeGrip(self, "bottom"),
+        }
         self._update_grip_positions()
 
     def _update_grip_positions(self):
@@ -82,6 +182,14 @@ class MainWindow(QMainWindow):
         self._grips[1].move(self.width() - s, 0)                      # top-right
         self._grips[2].move(0, self.height() - s)                     # bottom-left
         self._grips[3].move(self.width() - s, self.height() - s)      # bottom-right
+        self._edge_grips["top"].setGeometry(s, 0, max(0, self.width() - 2 * s), s)
+        self._edge_grips["bottom"].setGeometry(
+            s, self.height() - s, max(0, self.width() - 2 * s), s
+        )
+        self._edge_grips["left"].setGeometry(0, s, s, max(0, self.height() - 2 * s))
+        self._edge_grips["right"].setGeometry(
+            self.width() - s, s, s, max(0, self.height() - 2 * s)
+        )
 
     # ══════════════════════════════════════════════════
     #  UI 构建
@@ -286,7 +394,7 @@ class MainWindow(QMainWindow):
                 if os.path.isfile(icon_path):
                     btn.setIcon(QIcon(icon_path))
                     btn.setIconSize(QSize(22, 22))
-                btn.clicked.connect(self._on_nav_clicked)
+                btn.clicked.connect(lambda *_, sid=entry["id"]: self._switch_page(sid))
                 self.nav_layout.addWidget(btn)
                 self._nav_buttons[entry["id"]] = btn
 
@@ -294,9 +402,11 @@ class MainWindow(QMainWindow):
 
     def _create_pages(self):
         for entry in SCRIPT_REGISTRY:
+            if entry.get("hidden"):
+                continue
             page = ScriptPage(entry)
             page.btn_run.clicked.connect(
-                lambda checked=False, e=entry, p=page: self._on_run(e, p)
+                lambda *_, e=entry, p=page: self._on_run(e, p)
             )
             self.pages.addWidget(page)
             self._pages[entry["id"]] = page
@@ -322,9 +432,36 @@ class MainWindow(QMainWindow):
     # ══════════════════════════════════════════════════
 
     def _connect_signals(self):
-        self.btn_minimize.clicked.connect(self.showMinimized)
-        self.btn_maximize.clicked.connect(self._toggle_maximize)
-        self.btn_close.clicked.connect(self.close)
+        # clicked 会携带 checked(bool) 参数，打包环境下用 lambda 吸收参数更稳。
+        self.btn_minimize.clicked.connect(lambda *_: self.showMinimized())
+        self.btn_maximize.clicked.connect(lambda *_: self._toggle_maximize())
+        self.btn_close.clicked.connect(lambda *_: self.close())
+
+    def _update_tray_tooltip(self):
+        if self._tray_icon is None:
+            return
+        if self._running_task_name:
+            self._tray_icon.setToolTip(f"{APP_NAME}\n正在执行：{self._running_task_name}")
+        else:
+            self._tray_icon.setToolTip(APP_NAME)
+
+    @Slot()
+    def _restore_from_tray(self):
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    @Slot()
+    def _quit_from_tray(self):
+        self._force_quit = True
+        if self._tray_icon is not None:
+            self._tray_icon.hide()
+        QApplication.quit()
+
+    @Slot(QSystemTrayIcon.ActivationReason)
+    def _on_tray_activated(self, reason):
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+            self._restore_from_tray()
 
     # ══════════════════════════════════════════════════
     #  窗口拖拽 & 最大化 / 还原
@@ -354,6 +491,8 @@ class MainWindow(QMainWindow):
             self.size_grip_frame.show()
             for g in self._grips:
                 g.show()
+            for g in self._edge_grips.values():
+                g.show()
         else:
             self.showMaximized()
             self._is_maximized = True
@@ -363,14 +502,10 @@ class MainWindow(QMainWindow):
             self.size_grip_frame.hide()
             for g in self._grips:
                 g.hide()
+            for g in self._edge_grips.values():
+                g.hide()
 
     # ── 页面导航 ──
-
-    @Slot()
-    def _on_nav_clicked(self):
-        btn = self.sender()
-        script_id = btn.property("script_id")
-        self._switch_page(script_id)
 
     def _switch_page(self, script_id: str):
         page = self._pages.get(script_id)
@@ -411,28 +546,78 @@ class MainWindow(QMainWindow):
         page.clear_log()
         page.append_log(f"▶ 正在执行: {entry['name']} ...\n")
         self._running_page = page
+        self._running_task_name = entry["name"]
+        self._update_tray_tooltip()
         self._set_btn_stop_mode(page, True)
 
         func_name = entry.get("wrapper", entry["function"])
 
-        self._worker = ScriptWorker(
-            module_path=entry["module"],
-            func_name=func_name,
-            kwargs=params,
-        )
-        self._worker.log_signal.connect(page.log_output.insertPlainText)
-        self._worker.log_overwrite_signal.connect(page.overwrite_last_line)
-        self._worker.finished_signal.connect(
-            lambda ok, msg, p=page: self._on_finished(ok, msg, p)
-        )
-        self._worker.start()
+        try:
+            self._worker = ScriptWorker(
+                module_path=entry["module"],
+                func_name=func_name,
+                kwargs=params,
+            )
+            try:
+                self._worker.log_signal.connect(lambda *args: self._on_worker_log(str(args[0]) if args else ""))
+            except Exception as e:
+                raise RuntimeError(f"log_signal.connect 失败: {e}") from e
+
+            try:
+                self._worker.log_overwrite_signal.connect(
+                    lambda *args: self._on_worker_overwrite(str(args[0]) if args else "")
+                )
+            except Exception as e:
+                raise RuntimeError(f"log_overwrite_signal.connect 失败: {e}") from e
+
+            try:
+                self._worker.finished_signal.connect(
+                    lambda *args: self._on_worker_finished(
+                        bool(args[0]) if len(args) > 0 else False,
+                        str(args[1]) if len(args) > 1 else "",
+                    )
+                )
+            except Exception as e:
+                raise RuntimeError(f"finished_signal.connect 失败: {e}") from e
+
+            try:
+                self._worker.start()
+            except Exception as e:
+                raise RuntimeError(f"worker.start 失败: {e}") from e
+        except Exception as e:
+            page.append_log(f"\n✘ 连接运行信号失败: {e}")
+            self._running_page = None
+            self._running_task_name = ""
+            self._update_tray_tooltip()
+            self._set_btn_stop_mode(page, False)
+
+    def _on_worker_log(self, text: str):
+        if self._running_page is not None:
+            self._running_page.log_output.insertPlainText(text)
+
+    def _on_worker_overwrite(self, text: str):
+        if self._running_page is not None:
+            self._running_page.overwrite_last_line(text)
+
+    def _on_worker_finished(self, success: bool, msg: str):
+        page = self._running_page
+        if page is None:
+            return
+        self._on_finished(success, msg, page)
 
     @Slot(bool, str)
     def _on_finished(self, success: bool, msg: str, page: ScriptPage):
         tag = "✔ 成功" if success else "✘ 失败"
         page.append_log(f"\n{'='*50}\n{tag}: {msg}")
+        task_name = self._running_task_name or page.entry.get("name", "任务")
         self._set_btn_stop_mode(page, False)
         self._running_page = None
+        self._running_task_name = ""
+        self._update_tray_tooltip()
+        if self._tray_icon is not None and self._tray_icon.isVisible():
+            title = f"{task_name} 已完成" if success else f"{task_name} 执行失败"
+            icon = QSystemTrayIcon.Information if success else QSystemTrayIcon.Warning
+            self._tray_icon.showMessage(title, msg, icon, 4000)
 
     def _set_btn_stop_mode(self, page: ScriptPage, running: bool):
         """切换按钮在「运行」与「停止」两种状态之间"""
@@ -457,3 +642,13 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         self._update_grip_positions()
         super().resizeEvent(event)
+
+    def closeEvent(self, event: QCloseEvent):
+        if self._force_quit:
+            event.accept()
+            return
+        if self._tray_icon is not None and self._tray_icon.isVisible():
+            self.hide()
+            event.ignore()
+            return
+        event.accept()

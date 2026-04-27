@@ -5,6 +5,7 @@
 """
 
 import importlib
+import inspect
 import sys
 import threading
 import traceback
@@ -14,6 +15,7 @@ from PySide6.QtCore import QThread, Signal
 from core.logger import get_logger
 
 logger = get_logger(__name__)
+_STDIO_REDIRECT_LOCK = threading.Lock()
 
 
 class StopRequested(Exception):
@@ -34,12 +36,16 @@ class _StreamRedirector:
             raise StopRequested("用户终止")
         if not text:
             return
-        if "\r" in text and "\n" not in text:
-            line = text.replace("\r", "")
-            if line:
-                self._sig_overwrite.emit(line)
-        else:
-            self._sig_append.emit(text.replace("\r", ""))
+        try:
+            if "\r" in text and "\n" not in text:
+                line = text.replace("\r", "")
+                if line:
+                    self._sig_overwrite.emit(line)
+            else:
+                self._sig_append.emit(text.replace("\r", ""))
+        except RuntimeError:
+            # 任务结束阶段，Qt 信号源可能已被释放；忽略尾部日志，避免 Loguru 打印二次异常。
+            return
 
     def flush(self):
         pass
@@ -65,31 +71,44 @@ class ScriptWorker(QThread):
         self._stop_event.set()
 
     def run(self):
-        old_stdout, old_stderr = sys.stdout, sys.stderr
-        redirector = _StreamRedirector(
-            self.log_signal, self.log_overwrite_signal, self._stop_event
-        )
-        sys.stdout = redirector
-        sys.stderr = redirector
+        with _STDIO_REDIRECT_LOCK:
+            old_stdout, old_stderr = sys.stdout, sys.stderr
+            redirector = _StreamRedirector(
+                self.log_signal, self.log_overwrite_signal, self._stop_event
+            )
+            sys.stdout = redirector
+            sys.stderr = redirector
 
-        try:
-            module = importlib.import_module(self.module_path)
-            importlib.reload(module)
+            try:
+                module = importlib.import_module(self.module_path)
+                importlib.reload(module)
 
-            if self.wrapper_name and hasattr(module, self.wrapper_name):
-                func = getattr(module, self.wrapper_name)
-            else:
-                func = getattr(module, self.func_name)
+                if self.wrapper_name and hasattr(module, self.wrapper_name):
+                    func = getattr(module, self.wrapper_name)
+                else:
+                    func = getattr(module, self.func_name)
 
-            func(**self.kwargs)
-            self.finished_signal.emit(True, "执行完成")
-        except StopRequested:
-            self.finished_signal.emit(False, "已被用户终止")
-        except Exception:
-            if self._stop_event.is_set():
+                call_kwargs = dict(self.kwargs)
+                try:
+                    sig = inspect.signature(func)
+                    params = sig.parameters
+                    if "_stop_event" in params:
+                        call_kwargs["_stop_event"] = self._stop_event
+                    elif "stop_event" in params:
+                        call_kwargs["stop_event"] = self._stop_event
+                except Exception:
+                    # 签名获取失败时保持原调用方式
+                    pass
+
+                func(**call_kwargs)
+                self.finished_signal.emit(True, "执行完成")
+            except StopRequested:
                 self.finished_signal.emit(False, "已被用户终止")
-            else:
-                self.log_signal.emit("\n" + traceback.format_exc())
-                self.finished_signal.emit(False, "执行出错")
-        finally:
-            sys.stdout, sys.stderr = old_stdout, old_stderr
+            except Exception:
+                if self._stop_event.is_set():
+                    self.finished_signal.emit(False, "已被用户终止")
+                else:
+                    self.log_signal.emit("\n" + traceback.format_exc())
+                    self.finished_signal.emit(False, "执行出错")
+            finally:
+                sys.stdout, sys.stderr = old_stdout, old_stderr

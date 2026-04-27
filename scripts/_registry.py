@@ -10,6 +10,7 @@ views/script_page.py 根据这里的元数据自动生成 UI 控件。
   float    - 浮点数（QDoubleSpinBox）
   bool     - 复选框
   radio    - 互斥单选，choices 同 [{"value": "...", "label": "中文"}, ...]
+  select   - 下拉选择，choices 同 radio，亦可传 callable 动态返回 choices
 """
 
 import shutil
@@ -28,14 +29,13 @@ MODE_RADIO_LABEL_STATS_TYPE = [
     {"value": "txt", "label": "YOLO TXT"},
     {"value": "json", "label": "LabelMe JSON"},
 ]
-
 SCRIPT_REGISTRY = [
     # ── 格式转换 ─────────────────────────────────────
     {
         "id": "labelme2yolo",
         "group": "格式转换",
         "name": "LabelMe → YOLO",
-        "description": "统一入口：支持“仅 JSON 转 TXT”与“图片+JSON 混合目录打包到 images/labels”。\n自动识别 rectangle→检测 / polygon→分割，也可手动指定。",
+        "description": "统一入口：支持“仅 JSON 转 TXT”与“图片+JSON 混合目录打包到 images/labels”。\n手动模式可强制仅检测/仅分割；自动模式下若混合检测+分割，会分别输出到 det/ 与 seg/。",
         "module": "scripts.labelme2yolo",
         "function": "labelme2yolo_unified",
         "params": [
@@ -43,9 +43,10 @@ SCRIPT_REGISTRY = [
              "default": "json_only", "choices": MODE_RADIO_LABELME_INPUT_KIND},
             {"key": "input_dir",   "label": "输入文件夹", "type": "folder"},
             {"key": "output_dir",  "label": "输出文件夹", "type": "folder"},
+            {"key": "recursive_subfolders", "label": "递归子文件夹查找（JSON+图片）", "type": "bool", "default": False},
             {"key": "mode",        "label": "模式", "type": "radio",
              "default": "auto", "choices": MODE_RADIO_AUTO_DET_SEG},
-            {"key": "remap_to_zero", "label": "类别统一映射为 0", "type": "bool", "default": False},
+            {"key": "remap_to_zero", "label": "类别统一映射为0", "type": "bool", "default": False, "inline_with": "recursive_subfolders"},
         ],
     },
     {
@@ -60,6 +61,7 @@ SCRIPT_REGISTRY = [
             {"key": "images_dir",          "label": "图片文件夹",      "type": "folder"},
             {"key": "output_dir",          "label": "输出 JSON 文件夹","type": "folder"},
             {"key": "include_image_data",  "label": "写入 imageData",  "type": "bool", "default": True},
+            {"key": "remap_to_zero", "label": "类别统一映射为0", "type": "bool", "default": False, "inline_with": "include_image_data"},
         ],
     },
 
@@ -68,30 +70,38 @@ SCRIPT_REGISTRY = [
         "id": "yolo_show",
         "group": "数据可视化",
         "name": "YOLO 标签可视化",
-        "description": "读取 YOLO TXT + 对应图片输出叠图。\n模式：单选 自动判断 / 检测框 / 分割叠图。",
+        "description": "读取 YOLO TXT + 对应图片输出叠图。\n自动模式下若检测+分割混合，会分别输出到 det/ 与 seg/；也可手动仅检测或仅分割。",
         "module": "scripts.yolo_show",
         "function": "visualize_yolo",
         "params": [
             {"key": "img_folder",    "label": "图片文件夹",  "type": "folder"},
-            {"key": "txt_folder",    "label": "TXT 标签文件夹","type": "folder"},
+            {"key": "txt_folder",    "label": "标签文件夹","type": "folder"},
+            {"key": "label_format",  "label": "标签格式", "type": "radio", "default": "txt",
+             "choices": [{"value": "txt", "label": "txt格式标签"}, {"value": "json", "label": "json格式标签"}],
+             "inline_with": "txt_folder"},
             {"key": "output_folder", "label": "输出文件夹",    "type": "folder"},
             {"key": "mode",          "label": "模式", "type": "radio",
              "default": "auto", "choices": MODE_RADIO_AUTO_DET_SEG},
         ],
     },
-
     # ── 数据清洗 ──────────────────────────────────────
     {
         "id": "remove_blurring",
         "group": "数据清洗",
-        "name": "模糊图片筛除",
-        "description": "使用 Laplacian 方差检测模糊图，将低于阈值的图移入子目录。",
+        "name": "模糊图片去除（多方法）",
+        "description": "方法1：Laplacian 方差｜优势：速度快、实现简单｜场景：通用初筛。\n方法2：Tenengrad 梯度｜优势：对运动模糊更稳｜场景：无人机航拍、快速移动画面。\n方法3：无人机融合策略（推荐）｜优势：融合边缘清晰度与亮度鲁棒性｜场景：逆光/暗光/复杂地表的无人机数据。",
         "module": "scripts.remove_blurring",
         "function": "remove_blurry_images",
         "params": [
             {"key": "folder_path",     "label": "图片文件夹",  "type": "folder"},
             {"key": "recursive_subfolders", "label": "递归子文件夹查找图片", "type": "bool", "default": False},
-            {"key": "threshold",       "label": "模糊阈值（低于此值视为模糊，推荐 60-150）",
+            {"key": "method", "label": "检测方法", "type": "radio", "default": "uav_fusion",
+             "choices": [
+                 {"value": "laplacian", "label": "Laplacian 方差（通用初筛）"},
+                 {"value": "tenengrad", "label": "Tenengrad 梯度（运动模糊更稳）"},
+                 {"value": "uav_fusion", "label": "无人机融合策略（推荐）"},
+             ]},
+            {"key": "threshold",       "label": "模糊阈值（0-9999，分数低于此值视为模糊；值越大越严格）",
              "type": "float", "default": 100.0, "min": 0, "max": 9999},
             {"key": "backup_dir_name", "label": "回收子目录名",  "type": "text", "default": "removed_blur"},
         ],
@@ -99,14 +109,20 @@ SCRIPT_REGISTRY = [
     {
         "id": "remove_duplication_hanming",
         "group": "数据清洗",
-        "name": "重复图片去除（汉明距离）",
-        "description": "使用 dHash + 汉明距离检测近似重复图，移入子目录。\n阈值 0=完全一样，3-6 适合连拍去重，>10 可能误删。",
+        "name": "重复图片去除（多方法）",
+        "description": "阈值说明：推荐 3-8（越大越严格，去重越激进）。\n2-3：仅去除几乎一致的连拍；4-6：常用稳妥；7-8：更激进（误删风险上升）；10+：通常不建议。\n方法1：dHash｜优势：速度快、适合大批量初筛｜场景：快速清理近似连拍。\n方法2：pHash｜优势：抗亮度变化更稳｜场景：光照变化较大的航拍图。\n方法3：无人机联合策略（推荐）｜优势：dHash+pHash 双重判定，误删更低｜场景：无人机航线中相似构图但非重复数据。",
         "module": "scripts.remove_duplication_hanming",
         "function": "find_and_remove_duplicates",
         "params": [
             {"key": "folder_path",     "label": "图片文件夹",  "type": "folder"},
             {"key": "recursive_subfolders", "label": "递归子文件夹查找图片", "type": "bool", "default": False},
-            {"key": "threshold",       "label": "汉明距离阈值（推荐 3-8）",
+            {"key": "method", "label": "检测方法", "type": "radio", "default": "hybrid_uav",
+             "choices": [
+                 {"value": "dhash", "label": "dHash（快速初筛）"},
+                 {"value": "phash", "label": "pHash（亮度变化更稳）"},
+                 {"value": "hybrid_uav", "label": "无人机联合策略（推荐）"},
+             ]},
+            {"key": "threshold",       "label": "相似度阈值（推荐 3-8）",
              "type": "int", "default": 5, "min": 0, "max": 64},
             {"key": "backup_dir_name", "label": "回收子目录名",  "type": "text", "default": "removed_duplicates"},
         ],
@@ -130,14 +146,17 @@ SCRIPT_REGISTRY = [
         "id": "extract_frames",
         "group": "数据处理",
         "name": "视频抽帧",
-        "description": "按固定时间间隔从视频中抽取帧并保存为 JPG。\n支持单个视频文件或整个文件夹。\n检测到 FFmpeg 时优先使用（更快）；否则回退 OpenCV。",
+        "description": "按固定时间间隔从视频中抽取帧并保存为 JPG。\n支持单个视频文件或整个文件夹。\n抽帧间隔支持浮点秒（如 0.5、1.5）；传 -1 表示抽取每一帧。\n检测到 FFmpeg 时优先使用（更快）；否则回退 OpenCV。",
         "module": "scripts.extract_frames_from_mp4",
         "function": "extract_frames",
         "wrapper": "extract_frames_wrapper",
         "params": [
             {"key": "input_path",        "label": "视频文件/文件夹", "type": "file_or_folder"},
+            {"key": "recursive_subfolders", "label": "递归子文件夹查找视频", "type": "bool", "default": False, "inline_with": "input_path", "checkbox_first": True},
             {"key": "output_dir",        "label": "输出文件夹",       "type": "folder"},
-            {"key": "interval_seconds",  "label": "抽帧间隔（秒）",   "type": "int", "default": 3, "min": 1, "max": 3600},
+            {"key": "interval_seconds",  "label": "抽帧间隔（秒，-1=每一帧）", "type": "float",
+             "default": -1.0, "min": -1.0, "max": 999999.0, "step": 0.1, "decimals": 1,
+             "special_value": -1.0, "min_positive": 0.1},
             {"key": "ffmpeg_path",       "label": "FFmpeg 路径（留空自动检测）",
              "type": "file_or_folder", "default": shutil.which("ffmpeg") or "", "optional": True},
         ],
@@ -146,14 +165,20 @@ SCRIPT_REGISTRY = [
         "id": "replace_txt_label",
         "group": "数据处理",
         "name": "替换标签类别",
-        "description": "批量替换 YOLO TXT 标签中每行的第一个字段（类别 ID）。",
+        "description": "批量替换标签类别，支持 TXT / JSON。\n可按“原类别->新类别”替换，或一键将所有类别统一改为 0。",
         "module": "scripts.replace_txt_label_class",
         "function": "replace_label_class",
         "params": [
-            {"key": "txt_dir",    "label": "TXT 文件夹",  "type": "folder"},
+            {"key": "input_dir",    "label": "输入文件夹",  "type": "folder"},
+            {"key": "label_type", "label": "类型", "type": "radio", "default": "txt",
+             "choices": [{"value": "txt", "label": "txt格式标签"}, {"value": "json", "label": "json格式标签"}],
+             "inline_with": "input_dir"},
             {"key": "output_dir", "label": "输出文件夹",    "type": "folder"},
-            {"key": "old_class",  "label": "原类别",        "type": "text", "default": "0"},
-            {"key": "new_class",  "label": "新类别",        "type": "text", "default": "1"},
+            {"key": "all_to_zero", "label": "所有标签都替换为0", "type": "bool", "default": False},
+            {"key": "old_class",  "label": "原类别",        "type": "text", "default": "0",
+             "show_when": {"key": "all_to_zero", "values": [False]}},
+            {"key": "new_class",  "label": "新类别",        "type": "text", "default": "1",
+             "show_when": {"key": "all_to_zero", "values": [False]}},
         ],
     },
     {
@@ -167,6 +192,7 @@ SCRIPT_REGISTRY = [
             {"key": "label_dir", "label": "标签文件夹", "type": "folder"},
             {"key": "label_type", "label": "标签类型", "type": "radio",
              "default": "txt", "choices": MODE_RADIO_LABEL_STATS_TYPE},
+            {"key": "recursive_subfolders", "label": "递归子文件夹查找标签", "type": "bool", "default": False},
         ],
     },
     {
@@ -205,14 +231,34 @@ SCRIPT_REGISTRY = [
         "id": "split_classes_to_folders",
         "group": "数据处理",
         "name": "按类别拆分到文件夹",
-        "description": "根据标签中的类别值创建同名文件夹，并在每个类别目录下生成 images/labels。\n同一图片含多个类别时会复制到多个类别目录；每个类别的 labels 仅保留该类别行。\n可选将拆分后的类别值统一重映射为 0（默认开启，适合单类别训练）。",
+        "description": "根据标签中的类别值创建同名文件夹，并在每个类别目录下生成 images/labels。\n支持 TXT / JSON；同一图片含多个类别时会复制到多个类别目录；每个类别的 labels 仅保留该类别内容。\n可选将拆分后的类别值统一重映射为 0（默认关闭，适合按需启用单类别训练）。",
         "module": "scripts.split_classes_to_folders",
         "function": "split_classes_to_folders",
         "params": [
             {"key": "images_dir", "label": "图片文件夹", "type": "folder"},
             {"key": "labels_dir", "label": "标签文件夹", "type": "folder"},
+            {"key": "label_type", "label": "类型", "type": "radio", "default": "txt",
+             "choices": [{"value": "txt", "label": "txt格式标签"}, {"value": "json", "label": "json格式标签"}],
+             "inline_with": "labels_dir"},
             {"key": "output_dir", "label": "输出文件夹", "type": "folder"},
-            {"key": "remap_to_zero", "label": "将拆分后的类别重映射为 0", "type": "bool", "default": True},
+            {"key": "remap_to_zero", "label": "将拆分后的类别重映射为 0", "type": "bool", "default": False},
+        ],
+    },
+    {
+        "id": "crop_images_by_size",
+        "group": "数据处理",
+        "name": "按尺寸裁剪图片",
+        "description": "按指定高宽与重叠度滑窗裁剪图片。\n支持递归子文件夹；同名文件会自动加后缀避免重名覆盖。",
+        "module": "scripts.crop_images_by_size",
+        "function": "crop_images_by_size",
+        "params": [
+            {"key": "folder_path", "label": "图片文件夹路径", "type": "folder"},
+            {"key": "recursive_subfolders", "label": "递归子文件夹查找", "type": "bool", "default": False},
+            {"key": "output_dir", "label": "输出文件夹路径", "type": "folder"},
+            {"key": "crop_h", "label": "裁剪高度", "type": "int", "default": 640, "min": 1, "max": 20000},
+            {"key": "crop_w", "label": "裁剪宽度", "type": "int", "default": 640, "min": 1, "max": 20000},
+            {"key": "overlap_h_ratio", "label": "高度重叠度", "type": "float", "default": 0.2, "min": 0.0, "max": 0.99},
+            {"key": "overlap_w_ratio", "label": "宽度重叠度", "type": "float", "default": 0.2, "min": 0.0, "max": 0.99},
         ],
     },
     {
@@ -243,6 +289,8 @@ def get_groups():
     from collections import OrderedDict
     groups = OrderedDict()
     for entry in SCRIPT_REGISTRY:
+        if entry.get("hidden"):
+            continue
         g = entry.get("group", "其他")
         groups.setdefault(g, []).append(entry)
     return groups

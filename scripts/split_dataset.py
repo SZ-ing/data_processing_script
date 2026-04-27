@@ -15,6 +15,7 @@ def _detect_and_validate_classes(labels_dir, label_files):
     """
     class_ids = set()
     bad_files = []
+    read_errors = []
 
     for lf in label_files:
         path = os.path.join(labels_dir, lf)
@@ -33,7 +34,8 @@ def _detect_and_validate_classes(labels_dir, label_files):
                         bad_files.append((lf, line_no, str(cid)))
                         continue
                     class_ids.add(cid)
-        except OSError:
+        except OSError as e:
+            read_errors.append((lf, str(e)))
             continue
 
     if bad_files:
@@ -42,6 +44,11 @@ def _detect_and_validate_classes(labels_dir, label_files):
         )
         extra = f"\n  …（共 {len(bad_files)} 处）" if len(bad_files) > 10 else ""
         return None, f"标签数据异常: 存在非法类别 ID（必须为非负整数）\n{detail}{extra}"
+
+    if read_errors:
+        detail = "\n".join(f"  {f}: {msg}" for f, msg in read_errors[:10])
+        extra = f"\n  …（共 {len(read_errors)} 个文件读取失败）" if len(read_errors) > 10 else ""
+        return None, f"标签读取异常: 存在无法读取的标签文件\n{detail}{extra}"
 
     if not class_ids:
         return [0], None

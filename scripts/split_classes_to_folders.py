@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import copy
+import json
 import os
 import re
 import shutil
@@ -17,6 +19,7 @@ from collections import defaultdict
 from tqdm import tqdm
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+IMAGE_EXT_PRIORITY = [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"]
 
 
 def _safe_class_dir_name(class_name: str) -> str:
@@ -26,15 +29,32 @@ def _safe_class_dir_name(class_name: str) -> str:
 
 
 def _collect_images(images_dir: str) -> dict[str, str]:
-    """收集图片 stem -> 文件名（不含路径）。"""
-    out: dict[str, str] = {}
-    for name in os.listdir(images_dir):
+    """收集图片 stem -> 文件名（不含路径），同名不同后缀按优先级选一个。"""
+    candidates: dict[str, list[str]] = defaultdict(list)
+    for name in sorted(os.listdir(images_dir)):
         full = os.path.join(images_dir, name)
         if not os.path.isfile(full):
             continue
         stem, ext = os.path.splitext(name)
         if ext.lower() in IMAGE_EXTS:
-            out[stem] = name
+            candidates[stem].append(name)
+
+    ext_rank = {ext: idx for idx, ext in enumerate(IMAGE_EXT_PRIORITY)}
+    out: dict[str, str] = {}
+    for stem, names in candidates.items():
+        if len(names) == 1:
+            out[stem] = names[0]
+            continue
+
+        names_sorted = sorted(
+            names,
+            key=lambda n: (ext_rank.get(os.path.splitext(n)[1].lower(), 999), n.lower()),
+        )
+        out[stem] = names_sorted[0]
+        print(
+            f"[警告] 检测到同名多图: {stem} -> {names}；"
+            f"已按优先级使用: {out[stem]}"
+        )
     return out
 
 
@@ -53,6 +73,20 @@ def _parse_label_lines(label_path: str) -> dict[str, list[str]]:
     return class_to_lines
 
 
+def _parse_labelme_json_by_class(label_path: str) -> tuple[dict[str, list[dict]], dict]:
+    """解析单个 LabelMe JSON，返回 class -> shapes 以及原始 JSON 数据。"""
+    with open(label_path, "r", encoding="utf-8", errors="replace") as f:
+        data = json.load(f)
+
+    class_to_shapes: dict[str, list[dict]] = defaultdict(list)
+    for shape in data.get("shapes", []):
+        label = str(shape.get("label", "")).strip()
+        if not label:
+            continue
+        class_to_shapes[label].append(shape)
+    return class_to_shapes, data
+
+
 def _remap_lines_to_zero(lines: list[str]) -> list[str]:
     """将每行首列类别值重写为 0，保留其余坐标内容。"""
     out: list[str] = []
@@ -65,11 +99,22 @@ def _remap_lines_to_zero(lines: list[str]) -> list[str]:
     return out
 
 
+def _remap_shapes_to_zero(shapes: list[dict]) -> list[dict]:
+    """将 LabelMe shape 的 label 统一改为 '0'。"""
+    out: list[dict] = []
+    for shape in shapes:
+        copied = dict(shape)
+        copied["label"] = "0"
+        out.append(copied)
+    return out
+
+
 def split_classes_to_folders(
     images_dir: str,
     labels_dir: str,
     output_dir: str,
-    remap_to_zero: bool = True,
+    remap_to_zero: bool = False,
+    label_type: str = "txt",
 ):
     """
     按类别拆分 YOLO 数据。
@@ -91,22 +136,29 @@ def split_classes_to_folders(
 
     os.makedirs(output_dir, exist_ok=True)
 
+    lt = str(label_type).strip().lower()
+    if lt not in ("txt", "json"):
+        raise ValueError(f"不支持的标签类型: {label_type}")
+
     image_map = _collect_images(images_dir)
+    label_ext = ".txt" if lt == "txt" else ".json"
     label_files = sorted(
         n for n in os.listdir(labels_dir)
-        if os.path.isfile(os.path.join(labels_dir, n)) and n.lower().endswith(".txt")
+        if os.path.isfile(os.path.join(labels_dir, n)) and n.lower().endswith(label_ext)
     )
 
     total_labels = len(label_files)
     paired = 0
     skipped_no_image = 0
     skipped_empty = 0
+    bad_json = 0
     class_image_count: dict[str, int] = defaultdict(int)
     class_label_line_count: dict[str, int] = defaultdict(int)
 
     print(f"图片目录: {images_dir}")
     print(f"标签目录: {labels_dir}")
     print(f"输出目录: {output_dir}")
+    print(f"标签类型: {lt}")
     print(f"共发现标签文件: {total_labels}")
     print(f"类别重映射为 0: {'是' if remap_to_zero else '否'}")
 
@@ -118,15 +170,35 @@ def split_classes_to_folders(
             continue
 
         label_path = os.path.join(labels_dir, label_name)
-        class_to_lines = _parse_label_lines(label_path)
-        if not class_to_lines:
+        if lt == "json":
+            try:
+                class_to_shapes, json_data = _parse_labelme_json_by_class(label_path)
+            except Exception:
+                bad_json += 1
+                tqdm.write(f"跳过损坏 JSON: {label_name}")
+                continue
+            if not class_to_shapes:
+                skipped_empty += 1
+                continue
+        else:
+            class_to_lines = _parse_label_lines(label_path)
+            if not class_to_lines:
+                skipped_empty += 1
+                continue
+
+        if lt == "json":
+            class_entries = class_to_shapes.items()
+        else:
+            class_entries = class_to_lines.items()
+
+        if not class_entries:
             skipped_empty += 1
             continue
 
         paired += 1
         image_path = os.path.join(images_dir, image_name)
 
-        for class_name, lines in class_to_lines.items():
+        for class_name, rows in class_entries:
             class_dir = _safe_class_dir_name(class_name)
             cls_images_dir = os.path.join(output_dir, class_dir, "images")
             cls_labels_dir = os.path.join(output_dir, class_dir, "labels")
@@ -137,16 +209,23 @@ def split_classes_to_folders(
             dst_lbl = os.path.join(cls_labels_dir, label_name)
 
             shutil.copy2(image_path, dst_img)
-            write_lines = _remap_lines_to_zero(lines) if remap_to_zero else lines
-            with open(dst_lbl, "w", encoding="utf-8") as f:
-                f.write("\n".join(write_lines) + "\n")
+            if lt == "json":
+                write_shapes = _remap_shapes_to_zero(rows) if remap_to_zero else rows
+                out_data = copy.deepcopy(json_data)
+                out_data["shapes"] = write_shapes
+                with open(dst_lbl, "w", encoding="utf-8") as f:
+                    json.dump(out_data, f, ensure_ascii=False, indent=2)
+            else:
+                write_lines = _remap_lines_to_zero(rows) if remap_to_zero else rows
+                with open(dst_lbl, "w", encoding="utf-8") as f:
+                    f.write("\n".join(write_lines) + "\n")
 
             class_image_count[class_dir] += 1
-            class_label_line_count[class_dir] += len(lines)
+            class_label_line_count[class_dir] += len(rows)
 
     print("-" * 50)
     print(f"处理完成：共标签 {total_labels}，成功匹配图片 {paired}")
-    print(f"跳过：无同名图片 {skipped_no_image}，空标签 {skipped_empty}")
+    print(f"跳过：无同名图片 {skipped_no_image}，空标签 {skipped_empty}，损坏 JSON {bad_json}")
 
     if not class_image_count:
         print("未生成任何类别目录。")
@@ -155,8 +234,8 @@ def split_classes_to_folders(
     print("类别统计：")
     for cls in sorted(class_image_count.keys()):
         print(
-            f"  {cls}: 图片 {class_image_count[cls]}，"
-            f"标签行 {class_label_line_count[cls]}"
+            f"  {cls}: 图片 {class_image_count[cls]} 张，"
+            f"标签 {class_label_line_count[cls]} 个"
         )
 
 
@@ -166,5 +245,6 @@ if __name__ == "__main__":
         images_dir=r"D:\dataset\images",
         labels_dir=r"D:\dataset\labels",
         output_dir=r"D:\dataset\split_by_class",
-        remap_to_zero=True,
+        remap_to_zero=False,
+        label_type="txt",
     )

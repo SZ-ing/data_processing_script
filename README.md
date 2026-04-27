@@ -28,16 +28,17 @@
 | 分类 | 功能 | 说明 |
 |------|------|------|
 | **格式转换** | LabelMe → YOLO | LabelMe JSON 转 YOLO TXT；支持自动识别检测/分割，也可手动指定模式 |
-| | YOLO → LabelMe | YOLO TXT 转 LabelMe JSON；自动识别检测矩形 / 分割多边形 |
-| **数据可视化** | YOLO 标签可视化 | 在图片上绘制检测框或叠加分割结果并保存 |
-| **数据清洗** | 模糊图片筛除 | Laplacian 方差，低阈值图移入子目录 |
-| | 重复图片去除 | dHash + 汉明距离去除近似重复 |
+| | YOLO → LabelMe | YOLO TXT 转 LabelMe JSON；自动识别检测矩形 / 分割多边形，支持类别统一映射为0 |
+| **数据可视化** | YOLO 标签可视化 | 支持 TXT / JSON；在图片上绘制检测框或叠加分割结果；auto 混合时拆分输出 det/seg |
+| **数据清洗** | 模糊图片去除（多方法） | 支持 Laplacian / Tenengrad / 无人机融合策略，低于阈值移入回收目录 |
+| | 重复图片去除（多方法） | 支持 dHash / pHash / 无人机联合策略（双重判定）去除近似重复 |
 | | 文件名对齐 | 按主文件名同步两个文件夹，未匹配文件移入回收目录 |
 | **数据处理** | 视频抽帧 | 按时间间隔抽帧（优先 FFmpeg，否则 OpenCV） |
-| | 替换标签类别 | 批量替换 YOLO TXT 中的类别 ID |
+| | 替换标签类别 | 支持 TXT / JSON；可按原类别->新类别替换，或一键将所有类别替换为0 |
 | | 标签统计 | 统计各类别实例数与图片分布 |
 | | 数据集拆分 | 按比例划分 train / val / test 并生成 `dataset.yaml` |
 | | 生成空白标签 | 为无标注图片生成空 YOLO TXT（负样本） |
+| | 按类别拆分到文件夹 | 支持 TXT / JSON；可选将拆分后类别重映射为0 |
 | | M3U8 合并为 MP4 | 解析 m3u8 与 TS 分片合并（优先 FFmpeg 流拷贝） |
 
 ---
@@ -68,12 +69,11 @@ data_processing_script/
 ├── config/
 │   └── settings.py          # 应用名、版本、路径等
 │
-├── icons/                   # 应用图标等（Nuitka 的 --include-data-dir=icons=icons 与窗口图标路径依赖此目录）
 └── resources/
     └── icons/               # 导航与窗口按钮图标等
 ```
 
-Windows 下打包请优先使用下文 **Nuitka** 命令；若改用 PyInstaller，需自行把 `themes`、`resources`、`config`、`icons`、`scripts` 等资源一并打入发布目录（与 `main.py` 中 `frozen` 路径逻辑一致）。
+Windows 下打包请优先使用下文 **Nuitka** 命令；若改用 PyInstaller，需自行把 `themes`、`resources`、`config`、`scripts` 等资源一并打入发布目录（与 `main.py` 中 `frozen` 路径逻辑一致）。
 
 ---
 
@@ -139,14 +139,21 @@ python main.py
 
 ## 使用 Nuitka 打包（Windows）
 
-在**项目根目录**执行。下列参数组合经本项目验证；若删减 `--include-data-dir=icons=icons` 或 `--nofollow-import-to=...` 等选项，可能出现 **Nuitka 报错或运行期异常**。
+在**项目根目录**执行。下列参数组合经本项目验证；若删减关键 `--include-data-dir` 或 `--nofollow-import-to=...` 选项，可能出现 **Nuitka 报错或运行期异常**。
 
-**前置条件**：根目录下存在 `icons` 文件夹，且其中有 `--windows-icon-from-ico` 指向的图标文件（建议使用 `.ico`，示例为 `icons/app.ico`）。
+**前置条件**：`resources/icons/app.ico` 存在（`--windows-icon-from-ico` 会引用该文件）。
 
 **一行命令（便于复制）：**
 
+
+
+# --standalone 
+
 ```bash
-python -m nuitka --standalone --onefile --enable-plugin=pyside6 --include-package=scripts --include-data-dir=themes=themes --include-data-dir=resources=resources --include-data-dir=config=config --include-data-dir=icons=icons --nofollow-import-to=PySide6.QtWebEngine,PySide6.QtWebEngineWidgets,PySide6.QtWebEngineCore,PySide6.Qt3DCore,PySide6.Qt3DRender,PySide6.QtQuick,PySide6.QtQml,PySide6.QtMultimedia,PySide6.QtBluetooth,PySide6.QtSensors,PySide6.QtSerialPort,PySide6.QtCharts,PySide6.QtDataVisualization,PySide6.QtPdf,PySide6.QtSql,PySide6.QtTest,PySide6.QtDesigner,PySide6.QtHelp --windows-console-mode=disable --windows-icon-from-ico=icons/app.ico --output-filename=数据处理工具.exe --output-dir=dist main.py
+python -m nuitka --onefile --assume-yes-for-downloads --remove-output --enable-plugin=pyside6 --include-package=scripts --include-data-dir=themes=themes --include-data-dir=resources=resources --nofollow-import-to=PySide6.QtWebEngine,PySide6.QtWebEngineWidgets,PySide6.QtWebEngineCore,PySide6.Qt3DCore,PySide6.Qt3DRender,PySide6.QtQuick,PySide6.QtQml,PySide6.QtMultimedia,PySide6.QtBluetooth,PySide6.QtSensors,PySide6.QtSerialPort,PySide6.QtCharts,PySide6.QtDataVisualization,PySide6.QtPdf,PySide6.QtSql,PySide6.QtTest,PySide6.QtDesigner,PySide6.QtHelp --windows-console-mode=disable --windows-icon-from-ico=resources/icons/app.ico --output-filename=数据处理工具v1.3.exe --output-dir=dist main.py
+
 ```
+
+说明：若 `config` 目录仅包含 `.py` 文件，不需要 `--include-data-dir=config=config`（否则会有 “No data files in directory 'config'” 警告）。
 
 产物位于 `dist/数据处理工具.exe`（或 Nuitka 实际输出目录，以命令行提示为准）。
