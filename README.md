@@ -203,17 +203,11 @@ python -m nuitka --onefile --assume-yes-for-downloads --remove-output --enable-p
 
 ---
 
-## 安全与仓库卫生
-
-- **不要提交**数据集、处理产物、构建产物、虚拟环境和本地密钥。`.gitignore` 已忽略 `dist/`、`build/`、`__pycache__/`、`.venv/`、`.vscode/`、`data|dataset|output|runs/`、`.env`、`*.key` / `*.pem` 等。
-- 需要提交的示例素材（图片 / 视频 / 标注）请用 `git add -f` 显式强制添加，避免与默认忽略规则冲突。
-- `resources/fonts/` 中的字体若受商业授权限制，请勿随仓库分发：在 `.gitignore` 中取消 `resources/fonts/*.ttf` 的注释，把字体留在本地。
-
----
-
 ## 界面风格与第三方声明
 
 主界面布局与视觉风格（无边框窗口、侧栏导航、Dracula 系深色 QSS 等）参考并化用了开源模板 **[PyDracula — Modern GUI (PySide6 / PyQt6)](https://github.com/Wanderson-Magalhaes/Modern_GUI_PyDracula_PySide6_or_PyQt6)**（MIT License）。本仓库**并非**该项目的直接 fork，主题与交互在实现上有所简化与改写；若希望基于原作者的完整模板开发，请直接查阅上述仓库及其 README。
+
+标签可视化所用的字体位于 `resources/fonts/`，其授权来源请自行确认；若不允许再分发，请从仓库中移除并在本地放置。
 
 ---
 
