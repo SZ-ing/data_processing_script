@@ -1,17 +1,128 @@
-# Nuitka / PyInstaller 等打包输出（含 exe 及依赖文件）
+# ═══════════════════════════════════════════════════════════════════
+#  数据处理工具 —— .gitignore
+#  目标：构建产物 / 缓存 / 本地环境 / 密钥 / 数据集等与源码无关
+#        或不宜公开的内容，一律不进入版本库。
+# ═══════════════════════════════════════════════════════════════════
+
+# ── 打包 / 构建产物（Nuitka、PyInstaller） ─────────────────────────
 dist/
 build/
+*.exe
+*.pdb
+*.manifest
+*.spec
+main.build/
+main.dist/
+main.onefile-build/
+*.build/
+*.dist/
+*.onefile-build/
 
-# Python
+# ── Python 字节码与缓存 ────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+
+# ── 打包元信息 / 分发包 ────────────────────────────────────────────
 *.egg-info/
 .eggs/
+*.egg
+pip-wheel-metadata/
+MANIFEST
+.installed.cfg
+sdist/
+wheels/
 
-# 虚拟环境
+# ── 虚拟环境 ──────────────────────────────────────────────────────
 .venv/
 venv/
 env/
+ENV/
+.conda/
+site-packages/
+
+# ── 测试 / 类型检查 / 覆盖率缓存 ───────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+
+# ── 编辑器 / IDE 本地配置 ─────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.vim/
+.history/
+.ipynb_checkpoints/
+
+# ── 操作系统杂项 ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ── 日志 / 临时 / 备份文件 ────────────────────────────────────────
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# ── 敏感信息（务必不要提交） ──────────────────────────────────────
+.env
+.env.*
+*.env
+secrets/
+*.secret
+*.key
+*.pem
+*.pfx
+*.p12
+credentials*.json
+*token*.json
+token*.txt
+
+# ── 数据集 / 处理产物（体积大，可能含隐私内容，默认不入库） ─────────
+data/
+dataset/
+datasets/
+sample_data/
+output/
+outputs/
+runs/
+
+# ── 本地调试用的临时脚本（如需提交请删除对应注释） ─────────────────
+# test.py
+# scratch.py
+
+# ── 字体来源 / 授权敏感的字体（谨慎入库） ──────────────────────────
+# resources/fonts/ 下的字体若受商业授权限制，不要随仓库分发；
+# 此时取消下面一行注释，把字体留在本地：
+# resources/fonts/*.ttf
+
+# ── 常见图片 / 视频 / 标注文件 ────────────────────────────────────
+# 默认注释掉以免误伤 README 配图；确认不需要提交任何素材时取消注释：
+# *.jpg
+# *.jpeg
+# *.png
+# *.bmp
+# *.tif
+# *.tiff
+# *.webp
+# *.mp4
+# *.avi
+# *.mov
+# *.mkv
+# *.ts
+# *.m3u8
